@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  server:
+    build:
+      context: ./server
+    env_file:
+      - ./server/.env
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./server/scripts:/app/scripts
+  web:
+    build:
+      context: ./web
+    env_file:
+      - ./web/.env
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
