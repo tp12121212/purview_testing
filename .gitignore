@@ -416,3 +416,9 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Frontend build output
+web/dist/
+
+# OS-specific
+.DS_Store
