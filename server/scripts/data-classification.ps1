@@ -1,128 +1,35 @@
-<#
-.SYNOPSIS
-Connects to Exchange Online and runs Test-TextExtraction against a file.
-
-.DESCRIPTION
-Authenticates to Exchange Online using a User Principal Name (UPN), then reads a local file
-(PDF, etc.) and submits its bytes to Test-TextExtraction.
-
-Optionally, connects to the Microsoft Purview compliance session (IPPS) and runs
-Test-DataClassification against the extracted text streams.
-
-You can provide either:
-- -WinFile (typically when running on Windows), OR
-- -MacFile (typically when running on macOS)
-
-Only ONE file path is required. If you provide both, the script prefers the one that matches
-the current OS.
-
-.PARAMETER UserPrincipalName
-The Exchange Online sign-in identity (UPN), e.g. admin@contoso.com, used by Connect-ExchangeOnline.
-
-.PARAMETER WinFile
-Optional. Full path to the file on Windows (e.g. C:\Temp\document.pdf).
-Required only when running on Windows IF -MacFile is not provided.
-
-.PARAMETER MacFile
-Optional. Full path to the file on macOS (e.g. /Users/user/temp/document.pdf), do not use ~/Temp/doc.pdf.
-Required only when running on macOS IF -WinFile is not provided.
-
-.PARAMETER FilePath
-Optional. Direct file path override for automation scenarios (e.g. /tmp/document.pdf).
-
-.PARAMETER DataClassification
-Optional. If set, connects via Connect-IPPSSession and runs Test-DataClassification against
-each ExtractedStreamText returned by Test-TextExtraction.
-
-.PARAMETER SensitiveInformationTypes
-Optional. Comma-separated list of Sensitive Information Type display names or IDs to scope Test-DataClassification.
-
-.PARAMETER AllSensitiveInformationTypes
-Optional. If set, runs Test-DataClassification against all available Sensitive Information Types.
-
-.EXAMPLE
-# Windows (provide WinFile only)
-.\Test-Extraction.ps1 -UserPrincipalName "admin@contoso.com" -WinFile "C:\Temp\document.pdf"
-
-.EXAMPLE
-# macOS (provide MacFile only)
-pwsh ./Test-Extraction.ps1 -UserPrincipalName "admin@contoso.com" -MacFile "$HOME/temp/document.pdf"
-
-.EXAMPLE
-# Either OS (provide both; script uses the OS-appropriate one)
-.\Test-Extraction.ps1 -UserPrincipalName "admin@contoso.com" -WinFile "C:\Temp\document.pdf" -MacFile "$HOME/temp/document.pdf"
-
-.EXAMPLE
-# Run extraction + data classification on extracted text streams
-.\Test-Extraction.ps1 -UserPrincipalName "admin@contoso.com" -WinFile "C:\Temp\document.msg" -DataClassification
-
-#>
-
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, HelpMessage = "UPN used to authenticate to Exchange Online (e.g. admin@contoso.com).")]
-    [ValidateNotNullOrEmpty()]
-    [string]$UserPrincipalName,
-
-    [Parameter(Mandatory = $false, HelpMessage = "Optional direct file path override (e.g. /tmp/document.pdf).")]
+    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$FilePath,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Optional Windows file path (e.g. C:\Temp\document.pdf). Required on Windows if MacFile is not provided.")]
-    [ValidateNotNullOrEmpty()]
-    [string]$WinFile,
+    [Parameter(Mandatory = $false)]
+    [string]$UserPrincipalName,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Optional macOS file path (e.g. ~/temp/document.pdf). Required on macOS if WinFile is not provided.")]
-    [ValidateNotNullOrEmpty()]
-    [string]$MacFile,
+    [Parameter(Mandatory = $false)]
+    [string]$AccessToken,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Run Test-DataClassification against extracted text via Connect-IPPSSession.")]
-    [switch]$DataClassification,
-
-    [Parameter(Mandatory = $false, HelpMessage = "Comma-separated list of Sensitive Information Types (display names or IDs) to scope Test-DataClassification.")]
+    [Parameter(Mandatory = $false)]
     [string]$SensitiveInformationTypes,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Run Test-DataClassification against all Sensitive Information Types.")]
+    [Parameter(Mandatory = $false)]
     [switch]$AllSensitiveInformationTypes
 )
 
 try {
-    Connect-ExchangeOnline -UserPrincipalName $UserPrincipalName -ShowBanner:$true -ErrorAction Stop
-
-    if (-not [string]::IsNullOrWhiteSpace($FilePath)) {
-        $FilePath = $FilePath
-    }
-    else {
-        # Pick the path that matches the current OS (fallback to the other if provided).
-        if ($IsWindows) {
-            if (-not [string]::IsNullOrWhiteSpace($WinFile)) {
-                $FilePath = $WinFile
-            }
-            elseif (-not [string]::IsNullOrWhiteSpace($MacFile)) {
-                $FilePath = $MacFile
-            }
-            else {
-                throw "On Windows you must provide -WinFile (or provide -MacFile as an override)."
-            }
-        }
-        elseif ($IsMacOS) {
-            if (-not [string]::IsNullOrWhiteSpace($MacFile)) {
-                $FilePath = $MacFile
-            }
-            elseif (-not [string]::IsNullOrWhiteSpace($WinFile)) {
-                $FilePath = $WinFile
-            }
-            else {
-                throw "On macOS you must provide -MacFile (or provide -WinFile as an override)."
-            }
-        }
-        else {
-            throw "Unsupported OS. This script currently supports Windows and macOS only."
-        }
-    }
-
     if (-not (Test-Path -LiteralPath $FilePath)) {
         throw "File not found: $FilePath"
+    }
+
+    if ($AccessToken) {
+        Connect-ExchangeOnline -AccessToken $AccessToken -ShowBanner:$false -ErrorAction Stop
+    }
+    elseif ($UserPrincipalName) {
+        Connect-ExchangeOnline -UserPrincipalName $UserPrincipalName -ShowBanner:$false -ErrorAction Stop
+    }
+    else {
+        throw "Either AccessToken or UserPrincipalName must be provided."
     }
 
     $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
@@ -136,27 +43,17 @@ try {
         throw "Test-TextExtraction returned no ExtractedResults."
     }
 
-    Write-Verbose ("ExtractedResults type: {0}; count: {1}" -f $extractedResults.GetType().FullName, (@($extractedResults).Count))
-    if (@($extractedResults).Count -gt 0) {
-        $firstItem = @($extractedResults)[0]
-        Write-Verbose ("First ExtractedResults item type: {0}" -f $firstItem.GetType().FullName)
-        if ($firstItem -is [System.Collections.IDictionary]) {
-            Write-Verbose ("First ExtractedResults item keys: {0}" -f (($firstItem.Keys | Sort-Object) -join ", "))
-        }
-        else {
-            Write-Verbose ("First ExtractedResults item properties: {0}" -f (($firstItem.PSObject.Properties.Name | Sort-Object) -join ", "))
-        }
-    }
-
-    if (-not $DataClassification) {
-        $extractedResults | ConvertTo-Json -Depth 9
-        return
-    }
-
     Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
 
-    $selectedSensitiveTypes = $null
-    Connect-IPPSSession -UserPrincipalName $UserPrincipalName -ShowBanner:$true -ErrorAction Stop
+    if ($AccessToken) {
+        Connect-IPPSSession -AccessToken $AccessToken -ShowBanner:$false -ErrorAction Stop
+    }
+    elseif ($UserPrincipalName) {
+        Connect-IPPSSession -UserPrincipalName $UserPrincipalName -ShowBanner:$false -ErrorAction Stop
+    }
+    else {
+        throw "Either AccessToken or UserPrincipalName must be provided for Purview compliance."
+    }
 
     $testDataClassificationCommand = Get-Command Test-DataClassification -ErrorAction Stop
     $textParamName = $null
@@ -183,12 +80,7 @@ try {
         }
     }
 
-    $testTextExtractionParamName = if ($testDataClassificationCommand.Parameters.ContainsKey("TestTextExtractionResults")) {
-        "TestTextExtractionResults"
-    }
-    else {
-        $null
-    }
+    $testTextExtractionParamName = if ($testDataClassificationCommand.Parameters.ContainsKey("TestTextExtractionResults")) { "TestTextExtractionResults" } else { $null }
 
     if (-not $textParamName -and -not $fileDataParamName -and -not $testTextExtractionParamName) {
         $availableParams = ($testDataClassificationCommand.Parameters.Keys | Sort-Object) -join ", "
@@ -211,73 +103,68 @@ try {
         $null
     }
 
-    $sitResults = @(Get-DlpSensitiveInformationType -ErrorAction Stop)
-    $sitCatalog = @()
-    foreach ($sit in $sitResults) {
-        if (-not $sit) {
-            continue
-        }
+    $selectedSensitiveTypes = $null
+    if (-not $AllSensitiveInformationTypes) {
+        $sitResults = @(Get-DlpSensitiveInformationType -ErrorAction Stop)
+        $sitCatalog = @()
+        foreach ($sit in $sitResults) {
+            if (-not $sit) {
+                continue
+            }
 
-        $displayName = $null
-        foreach ($prop in @("Name", "DisplayName", "Identity", "Id")) {
-            if ($sit.PSObject.Properties.Name -contains $prop) {
-                $value = $sit.$prop
-                if (-not [string]::IsNullOrWhiteSpace($value)) {
-                    $displayName = $value
-                    break
+            $displayName = $null
+            foreach ($prop in @("Name", "DisplayName", "Identity", "Id")) {
+                if ($sit.PSObject.Properties.Name -contains $prop) {
+                    $value = $sit.$prop
+                    if (-not [string]::IsNullOrWhiteSpace($value)) {
+                        $displayName = $value
+                        break
+                    }
+                }
+            }
+
+            $idValue = $null
+            foreach ($prop in @("Id", "Identity")) {
+                if ($sit.PSObject.Properties.Name -contains $prop) {
+                    $value = $sit.$prop
+                    if (-not [string]::IsNullOrWhiteSpace($value)) {
+                        $idValue = $value
+                        break
+                    }
+                }
+            }
+
+            if ($displayName -and $idValue) {
+                $sitCatalog += [pscustomobject]@{
+                    Display = $displayName
+                    Id = $idValue
                 }
             }
         }
 
-        $idValue = $null
-        foreach ($prop in @("Id", "Identity")) {
-            if ($sit.PSObject.Properties.Name -contains $prop) {
-                $value = $sit.$prop
-                if (-not [string]::IsNullOrWhiteSpace($value)) {
-                    $idValue = $value
-                    break
+        if ($SensitiveInformationTypes) {
+            $requested = $SensitiveInformationTypes -split ',' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            $matched = @()
+            foreach ($request in $requested) {
+                $hit = $sitCatalog | Where-Object { $_.Display -eq $request -or $_.Id -eq $request }
+                if ($hit) {
+                    $matched += $hit
+                }
+            }
+
+            if ($matched.Count -gt 0) {
+                if ($scopeParamName -eq "ClassificationNames") {
+                    $selectedSensitiveTypes = $matched.Id | Select-Object -Unique
+                }
+                else {
+                    $selectedSensitiveTypes = $matched.Display | Select-Object -Unique
                 }
             }
         }
-
-        if ($displayName -and $idValue) {
-            $sitCatalog += [pscustomobject]@{
-                Display = $displayName
-                Id = $idValue
-            }
-        }
     }
 
-    $sitCatalog = $sitCatalog | Sort-Object Display
-    if (-not $AllSensitiveInformationTypes -and $SensitiveInformationTypes -and $sitCatalog.Count -gt 0) {
-        $requested = $SensitiveInformationTypes -split ',' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-        $matched = @()
-        foreach ($request in $requested) {
-            $hit = $sitCatalog | Where-Object { $_.Display -eq $request -or $_.Id -eq $request }
-            if ($hit) {
-                $matched += $hit
-            }
-        }
-
-        if ($matched.Count -gt 0) {
-            if ($scopeParamName -eq "ClassificationNames") {
-                $selectedSensitiveTypes = $matched.Id | Select-Object -Unique
-            }
-            else {
-                $selectedSensitiveTypes = $matched.Display | Select-Object -Unique
-            }
-        }
-        else {
-            Write-Warning "Requested SITs did not match catalog. Defaulting to all SITs."
-            $selectedSensitiveTypes = $null
-        }
-    }
-    elseif ($AllSensitiveInformationTypes) {
-        $selectedSensitiveTypes = $null
-    }
-
-    $sourceFileName = if ($FilePath) { [System.IO.Path]::GetFileName($FilePath) } else { $null }
-    $sourceExtension = if ($FilePath) { [System.IO.Path]::GetExtension($FilePath) } else { $null }
+    $sourceFileName = [System.IO.Path]::GetFileName($FilePath)
+    $sourceExtension = [System.IO.Path]::GetExtension($FilePath)
     $isEmailSource = $false
     if ($sourceExtension) {
         $isEmailSource = @(".msg", ".eml") -contains $sourceExtension.ToLowerInvariant()
@@ -415,7 +302,6 @@ try {
     }
 
     if (-not $streamedText -or $streamedText.Count -eq 0) {
-        Write-Verbose "No stream entries built from ExtractedResults. Falling back to aggregated extracted text."
         $fallbackText = $null
         if ($extractedResults -is [string]) {
             $fallbackText = $extractedResults
@@ -450,10 +336,6 @@ try {
         }
 
         if (-not [string]::IsNullOrWhiteSpace($fallbackText)) {
-            Write-Verbose ("Fallback extracted text length: {0}" -f $fallbackText.Length)
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($fallbackText)) {
             $fallbackKind = if ($isEmailSource) { "Body" } else { "Document" }
             $fallbackName = if ($isEmailSource) { "Body" } else { $sourceFileName }
             $streamedText = @([pscustomobject]@{
@@ -466,14 +348,10 @@ try {
         }
     }
 
-    Write-Verbose ("StreamedText count: {0}" -f (@($streamedText).Count))
-
     if ($textParamName -or $fileDataParamName) {
         $dataClassificationResults = @()
         foreach ($stream in $streamedText) {
-            $dcParams = @{
-                ErrorAction = "Stop"
-            }
+            $dcParams = @{ ErrorAction = "Stop" }
             if ($textParamName) {
                 $dcParams[$textParamName] = $stream.Text
             }
@@ -502,9 +380,7 @@ try {
         }
     }
     elseif ($testTextExtractionParamName) {
-        $dcParams = @{
-            ErrorAction = "Stop"
-        }
+        $dcParams = @{ ErrorAction = "Stop" }
         if ($extractedResults -is [string] -or $extractedResults -is [string[]]) {
             throw "Test-TextExtraction results are strings, not TestTextExtractionResult objects. Cannot pass to Test-DataClassification."
         }
@@ -533,6 +409,7 @@ try {
 }
 catch {
     Write-Error $_
+    exit 1
 }
 finally {
     Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
