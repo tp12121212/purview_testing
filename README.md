@@ -25,7 +25,15 @@ Either OS (provide both; script uses the OS-appropriate one):
 .\textExtraction_test.ps1 -UserPrincipalName "admin@contoso.com" -WinFile "C:\Temp\document.pdf" -MacFile "$HOME/temp/document.pdf"
 ```
 
+Run extraction + data classification on extracted text streams:
+```powershell
+.\textExtraction_test.ps1 -UserPrincipalName "admin@contoso.com" -WinFile "C:\Temp\document.msg" -DataClassification
+```
+
 ## Notes
 - Provide a full file path; `~/` is not expanded by PowerShell in all contexts.
 - The script reads the file as bytes and submits it to `Test-TextExtraction`.
-- Output is JSON from `ExtractedResults` for easy inspection or piping.
+- Output is JSON from `ExtractedResults` for easy inspection or piping. When `-DataClassification` is set,
+  the script returns a composite JSON object with `Extraction` and `DataClassification`.
+- When `-DataClassification` is set, the script prompts to run against all SITs or lets you select specific
+  SITs by number from `Get-DlpSensitiveInformationType`.
