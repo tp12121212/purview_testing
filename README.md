@@ -14,22 +14,31 @@ This repository now includes a full-stack application for running Microsoft Purv
 - Access to Microsoft Purview compliance cmdlets (`Connect-IPPSSession`, `Test-DataClassification`).
 - Node.js 18+ for local development.
 
-## Microsoft Entra ID App Registration (Web UI)
+## Microsoft Entra ID App Registration (MSAL mode)
 1. Create a **multi-tenant** app registration.
 2. Add **Redirect URI** for SPA: `http://localhost:5173` (for local dev).
 3. Add API permissions:
-   - `Exchange.ManageAsApp` or delegated Exchange Online scopes if applicable.
-   - `Compliance.ReadWrite` or other required Purview scopes.
-   - `openid`, `profile`, `email` for basic identity.
-4. Grant **admin consent** for the tenant.
+   - **Microsoft Graph (Delegated)**:
+     - `openid`, `profile`, `email` (basic sign-in and profile access).
+   - **Office 365 Exchange Online (Delegated)**:
+     - Search for **“Office 365 Exchange Online”** in the APIs list.
+     - Add **`Exchange.ManageAsApp`** only if you intend to use **app-only** auth (not used in MSAL SPA mode).
+     - For delegated user auth (recommended for MSAL SPA), add **`full_access_as_user`** (Exchange Online) so `Connect-ExchangeOnline -AccessToken` can run.
+   - **Microsoft Purview compliance**:
+     - Search for **“Microsoft Purview”** or **“Microsoft 365 compliance”** (the label can differ by tenant).
+     - Add delegated permissions that include **DLP/SIT read** access (e.g., `Compliance.Read`, `Compliance.ReadWrite` if available in your tenant).
+4. Grant **admin consent** for the tenant (required for compliance/Exchange delegated scopes).
 5. Copy the **Application (client) ID**.
 
-> ⚠️ The backend expects access tokens issued for the client ID configured in `server/.env`.
+> ⚠️ Permission names can differ by tenant and licensing. If you cannot find the exact permission above, open the API picker and search by keyword (e.g., “Exchange Online”, “Compliance”, “Purview”, “DLP”). Ensure the permissions you add are **Delegated** for the SPA flow.
 
-### Can I avoid app registration?
-The Web UI uses OAuth 2.0/OIDC, which **always requires an Entra ID application registration** (even for user/device-code flows). You can make it multi-tenant and use delegated permissions with no client secret, but you still need a client ID to participate in Microsoft identity. 
+> ⚠️ The backend expects access tokens issued for the client ID configured in `server/.env` when `AUTH_MODE=msal`.
 
-If you want a no-app-registration path, use the **PowerShell scripts directly** with interactive or device-code sign-in supported by `Connect-ExchangeOnline` and `Connect-IPPSSession`. Those cmdlets use Microsoft-owned public client IDs under the hood, which is why they can prompt users without you registering an app. The tradeoff is that this flow is not suitable for the browser-based Web UI.
+## Authentication Modes
+The app supports two modes:
+
+1. **MSAL (default)**: uses the SPA + API token flow and requires your own Entra ID app registration.
+2. **Interactive (device code/user)**: skips MSAL and prompts for user auth on the server host (device code/web login) when PowerShell connects. This mode is intended for local or trusted environments and **does not** require an app registration, but it does require someone to complete interactive sign-in on the server.
 
 ## Environment Configuration
 Create `.env` files using the examples below (or copy from `server/.env.example` and `web/.env.example`):
@@ -37,6 +46,7 @@ Create `.env` files using the examples below (or copy from `server/.env.example`
 ### Backend (`server/.env`)
 ```bash
 PORT=4000
+AUTH_MODE=msal
 M365_CLIENT_ID=your-client-id
 M365_AUTHORITY_HOST=https://login.microsoftonline.com
 M365_ALLOWED_TENANTS=
@@ -52,6 +62,7 @@ PWSH_SCRIPTS_DIR=/app/scripts
 ### Frontend (`web/.env`)
 ```bash
 VITE_M365_CLIENT_ID=your-client-id
+VITE_AUTH_MODE=msal
 VITE_M365_AUTHORITY_HOST=https://login.microsoftonline.com
 VITE_M365_REDIRECT_URI=http://localhost:5173
 VITE_M365_SCOPES=openid,profile,email,https://outlook.office365.com/.default,https://compliance.microsoft.com/.default

@@ -24,6 +24,23 @@ const getKey = (header, callback) => {
 const issuerForTenant = (tenantId) => `${config.authorityHost}/${tenantId}/v2.0`;
 
 export const authenticate = (req, res, next) => {
+  if (config.authMode === 'interactive') {
+    const userPrincipalName = req.headers['x-user-principal-name'] ?? req.body?.userPrincipalName;
+    if (!userPrincipalName) {
+      res.status(401).json({ error: 'Missing user principal name for interactive auth mode.' });
+      return;
+    }
+
+    req.auth = {
+      tenantId: null,
+      userPrincipalName,
+      token: null
+    };
+    logger.info('auth_interactive', { user: userPrincipalName });
+    next();
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Missing bearer token.' });

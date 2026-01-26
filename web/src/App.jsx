@@ -3,6 +3,8 @@ import { useMsal } from '@azure/msal-react';
 import { loginRequest } from './authConfig.js';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
+const authMode = (import.meta.env.VITE_AUTH_MODE ?? 'msal').toLowerCase();
+const isMsalAuth = authMode === 'msal';
 
 const formatJson = (value) => JSON.stringify(value, null, 2);
 
@@ -76,11 +78,14 @@ const DataClassificationCards = ({ data }) => {
   );
 };
 
-const useAccessToken = () => {
+const useAccessToken = (enabled) => {
   const { instance, accounts } = useMsal();
   const account = accounts[0];
 
   const getToken = async () => {
+    if (!enabled) {
+      return null;
+    }
     if (!account) {
       throw new Error('No signed in account.');
     }
@@ -107,7 +112,7 @@ const buildFormData = (file, payload) => {
 
 export default function App() {
   const { instance } = useMsal();
-  const { account, getToken } = useAccessToken();
+  const { account, getToken } = useAccessToken(isMsalAuth);
   const [file, setFile] = useState(null);
   const [result, setResult] = useState(null);
   const [classification, setClassification] = useState(null);
@@ -116,8 +121,9 @@ export default function App() {
   const [sits, setSits] = useState([]);
   const [selectedSits, setSelectedSits] = useState('');
   const [useAllSits, setUseAllSits] = useState(true);
+  const [userPrincipalName, setUserPrincipalName] = useState('');
 
-  const isAuthenticated = Boolean(account);
+  const isAuthenticated = isMsalAuth ? Boolean(account) : Boolean(userPrincipalName);
 
   const selectionHint = useMemo(() => {
     if (!sits.length) {
@@ -142,7 +148,7 @@ export default function App() {
       const token = await getToken();
       const response = await fetch(`${apiBaseUrl}/api/sensitive-information-types`, {
         headers: {
-          Authorization: `Bearer ${token}`
+          ...(isMsalAuth ? { Authorization: `Bearer ${token}` } : { 'X-User-Principal-Name': userPrincipalName })
         }
       });
       const payload = await response.json();
@@ -166,6 +172,10 @@ export default function App() {
       setError('Please select a file to upload.');
       return;
     }
+    if (!isMsalAuth && !userPrincipalName) {
+      setError('Please enter your user principal name.');
+      return;
+    }
     setLoading(true);
     setError('');
     setState(null);
@@ -174,13 +184,14 @@ export default function App() {
       const token = await getToken();
       const payload = buildFormData(file, {
         selectedSits: useAllSits ? '' : selectedSits,
-        useAllSits
+        useAllSits,
+        userPrincipalName: isMsalAuth ? undefined : userPrincipalName
       });
 
       const response = await fetch(`${apiBaseUrl}${endpoint}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`
+          ...(isMsalAuth ? { Authorization: `Bearer ${token}` } : { 'X-User-Principal-Name': userPrincipalName })
         },
         body: payload
       });
@@ -209,7 +220,7 @@ export default function App() {
           </p>
         </div>
         <div className="auth-actions">
-          {isAuthenticated ? (
+          {isMsalAuth && isAuthenticated ? (
             <>
               <div className="user-pill">
                 <span>{account?.name ?? account?.username}</span>
@@ -218,10 +229,14 @@ export default function App() {
                 Sign out
               </button>
             </>
-          ) : (
+          ) : isMsalAuth ? (
             <button type="button" onClick={handleLogin}>
               Sign in with Microsoft 365
             </button>
+          ) : (
+            <div className="user-pill">
+              <span>Device code / user auth</span>
+            </div>
           )}
         </div>
       </header>
@@ -238,6 +253,22 @@ export default function App() {
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             />
           </div>
+
+          {!isMsalAuth && (
+            <div className="field">
+              <label htmlFor="upn">User Principal Name</label>
+              <input
+                id="upn"
+                type="text"
+                placeholder="user@contoso.com"
+                value={userPrincipalName}
+                onChange={(event) => setUserPrincipalName(event.target.value)}
+              />
+              <p className="status">
+                You will be prompted for device code authentication on the server console.
+              </p>
+            </div>
+          )}
 
           <div className="field">
             <label>Sensitive Information Types</label>

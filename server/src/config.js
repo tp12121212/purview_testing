@@ -10,9 +10,13 @@ const required = (name, fallback = undefined) => {
   return value;
 };
 
+const authMode = (process.env.AUTH_MODE ?? 'msal').toLowerCase();
+const shouldRequireClientId = authMode === 'msal';
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
-  clientId: required('M365_CLIENT_ID'),
+  authMode,
+  clientId: shouldRequireClientId ? required('M365_CLIENT_ID') : process.env.M365_CLIENT_ID ?? '',
   authorityHost: process.env.M365_AUTHORITY_HOST ?? 'https://login.microsoftonline.com',
   allowedTenants: (process.env.M365_ALLOWED_TENANTS ?? '').split(',').map((tenant) => tenant.trim()).filter(Boolean),
   apiScopes: (process.env.M365_API_SCOPES ?? '').split(',').map((scope) => scope.trim()).filter(Boolean),
