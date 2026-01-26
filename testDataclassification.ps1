@@ -112,6 +112,18 @@ try {
         throw "Test-TextExtraction returned no ExtractedResults."
     }
 
+    Write-Verbose ("ExtractedResults type: {0}; count: {1}" -f $extractedResults.GetType().FullName, (@($extractedResults).Count))
+    if (@($extractedResults).Count -gt 0) {
+        $firstItem = @($extractedResults)[0]
+        Write-Verbose ("First ExtractedResults item type: {0}" -f $firstItem.GetType().FullName)
+        if ($firstItem -is [System.Collections.IDictionary]) {
+            Write-Verbose ("First ExtractedResults item keys: {0}" -f (($firstItem.Keys | Sort-Object) -join ", "))
+        }
+        else {
+            Write-Verbose ("First ExtractedResults item properties: {0}" -f (($firstItem.PSObject.Properties.Name | Sort-Object) -join ", "))
+        }
+    }
+
     if (-not $DataClassification) {
         $extractedResults | ConvertTo-Json -Depth 9
         return
@@ -262,21 +274,56 @@ try {
         $isEmailSource = @(".msg", ".eml") -contains $sourceExtension.ToLowerInvariant()
     }
 
+    $resolveValue = {
+        param(
+            [object]$obj,
+            [string]$name
+        )
+        if ($null -eq $obj) {
+            return $null
+        }
+        if ($obj -is [System.Collections.IDictionary]) {
+            if ($obj.Contains($name)) {
+                return $obj[$name]
+            }
+            return $null
+        }
+        if ($obj.PSObject.Properties.Name -contains $name) {
+            return $obj.$name
+        }
+        return $null
+    }
+
     $streamedText = @()
     $streamIndex = 0
     foreach ($item in $extractedResults) {
         $streamTexts = @()
-        if ($item.PSObject.Properties.Name -contains "ExtractedStreamText") {
-            $streamTexts = @($item.ExtractedStreamText)
-        }
-        elseif ($item.PSObject.Properties.Name -contains "ExtractedText") {
-            $streamTexts = @($item.ExtractedText)
+        $extractedStreamText = & $resolveValue $item "ExtractedStreamText"
+        if ($extractedStreamText) {
+            $streamTexts = @($extractedStreamText)
         }
         else {
-            $fallbackTextProps = $item.PSObject.Properties | Where-Object { $_.Name -match 'Extracted.*Text' }
-            foreach ($prop in $fallbackTextProps) {
-                if ($prop.Value) {
-                    $streamTexts += @($prop.Value)
+            $extractedText = & $resolveValue $item "ExtractedText"
+            if ($extractedText) {
+                $streamTexts = @($extractedText)
+            }
+            else {
+                if ($item -is [System.Collections.IDictionary]) {
+                    $fallbackTextProps = $item.Keys | Where-Object { $_ -match 'Extracted.*Text' }
+                    foreach ($propName in $fallbackTextProps) {
+                        $value = $item[$propName]
+                        if ($value) {
+                            $streamTexts += @($value)
+                        }
+                    }
+                }
+                else {
+                    $fallbackTextProps = $item.PSObject.Properties | Where-Object { $_.Name -match 'Extracted.*Text' }
+                    foreach ($prop in $fallbackTextProps) {
+                        if ($prop.Value) {
+                            $streamTexts += @($prop.Value)
+                        }
+                    }
                 }
             }
         }
@@ -289,30 +336,27 @@ try {
         $streamName = $null
 
         foreach ($prop in @("AttachmentName", "AttachmentFileName", "Attachment", "AttachmentFile")) {
-            if ($item.PSObject.Properties.Name -contains $prop) {
-                $value = $item.$prop
-                if (-not [string]::IsNullOrWhiteSpace($value)) {
-                    $streamKind = "Attachment"
-                    $streamName = $value
-                    break
-                }
+            $value = & $resolveValue $item $prop
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                $streamKind = "Attachment"
+                $streamName = $value
+                break
             }
         }
 
         if ($streamKind -eq "Unknown") {
-            if ($item.PSObject.Properties.Name -contains "IsAttachment" -and $item.IsAttachment) {
+            $isAttachment = & $resolveValue $item "IsAttachment"
+            if ($isAttachment) {
                 $streamKind = "Attachment"
             }
         }
 
         if (-not $streamName) {
             foreach ($prop in @("StreamName", "ItemName", "FileName", "Name")) {
-                if ($item.PSObject.Properties.Name -contains $prop) {
-                    $value = $item.$prop
-                    if (-not [string]::IsNullOrWhiteSpace($value)) {
-                        $streamName = $value
-                        break
-                    }
+                $value = & $resolveValue $item $prop
+                if (-not [string]::IsNullOrWhiteSpace($value)) {
+                    $streamName = $value
+                    break
                 }
             }
         }
@@ -360,6 +404,60 @@ try {
             }
         }
     }
+
+    if (-not $streamedText -or $streamedText.Count -eq 0) {
+        Write-Verbose "No stream entries built from ExtractedResults. Falling back to aggregated extracted text."
+        $fallbackText = $null
+        if ($extractedResults -is [string]) {
+            $fallbackText = $extractedResults
+        }
+        elseif ($extractedResults -is [string[]]) {
+            $fallbackText = ($extractedResults -join [Environment]::NewLine)
+        }
+        else {
+            $candidateTexts = @()
+            foreach ($item in @($extractedResults)) {
+                if ($item -is [string]) {
+                    $candidateTexts += $item
+                    continue
+                }
+
+                $extractedStreamText = & $resolveValue $item "ExtractedStreamText"
+                if ($extractedStreamText) {
+                    $candidateTexts += @($extractedStreamText)
+                    continue
+                }
+
+                $extractedText = & $resolveValue $item "ExtractedText"
+                if ($extractedText) {
+                    $candidateTexts += @($extractedText)
+                    continue
+                }
+            }
+
+            if ($candidateTexts.Count -gt 0) {
+                $fallbackText = ($candidateTexts -join [Environment]::NewLine)
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($fallbackText)) {
+            Write-Verbose ("Fallback extracted text length: {0}" -f $fallbackText.Length)
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($fallbackText)) {
+            $fallbackKind = if ($isEmailSource) { "Body" } else { "Document" }
+            $fallbackName = if ($isEmailSource) { "Body" } else { $sourceFileName }
+            $streamedText = @([pscustomobject]@{
+                StreamIndex = 1
+                Kind = $fallbackKind
+                Name = $fallbackName
+                SourceFile = $sourceFileName
+                Text = $fallbackText
+            })
+        }
+    }
+
+    Write-Verbose ("StreamedText count: {0}" -f (@($streamedText).Count))
 
     if ($textParamName -or $fileDataParamName) {
         $dataClassificationResults = @()
