@@ -15,33 +15,53 @@ This repository now includes a full-stack application for running Microsoft Purv
 - Node.js 18+ for local development.
 
 ## Microsoft Entra ID App Registration (MSAL mode)
+### Required permissions (delegated)
+- **Microsoft Graph**: `openid`, `profile`, `email` (basic sign-in).
+- **Office 365 Exchange Online**: `full_access_as_user` or `EWS.AccessAsUser.All` (required for `Connect-ExchangeOnline -AccessToken`).
+- **Microsoft 365 compliance**: `Compliance.Read` (minimum) or `Compliance.ReadWrite` (if you need to change compliance data).
+
+> ⚠️ Permission labels can differ slightly by tenant/licensing. If you cannot find the exact names, search by keyword (e.g., “Exchange Online”, “Compliance”, “Purview”, “DLP”). Ensure you add **Delegated** permissions.
+> ℹ️ The Microsoft Purview portal is now at `https://purview.microsoft.com`. The OAuth resource used by the compliance cmdlets still targets `https://compliance.microsoft.com`.
+
+### Manual steps (Azure portal)
 1. Create a **multi-tenant** app registration.
-2. Add **Redirect URI** for SPA: `http://localhost:5173` (for local dev).
-3. Add API permissions:
-   - **Microsoft Graph (Delegated)**:
-     - `openid`, `profile`, `email` (basic sign-in and profile access).
-   - **Office 365 Exchange Online (Delegated)**:
-     - Search for **“Office 365 Exchange Online”** in the APIs list.
-     - Add **`Exchange.ManageAsApp`** only if you intend to use **app-only** auth (not used in MSAL SPA mode).
-     - For delegated user auth (recommended for MSAL SPA), add **`full_access_as_user`** (Exchange Online) so `Connect-ExchangeOnline -AccessToken` can run.
-   - **Microsoft Purview compliance**:
-     - Search for **“Microsoft Purview”** or **“Microsoft 365 compliance”** (the label can differ by tenant).
-     - Add delegated permissions that include **DLP/SIT read** access (e.g., `Compliance.Read`, `Compliance.ReadWrite` if available in your tenant).
-4. Grant **admin consent** for the tenant (required for compliance/Exchange delegated scopes).
-5. Copy the **Application (client) ID**.
+2. Add **SPA Redirect URI(s)** (e.g., `http://localhost:5173` and your production URL).
+3. Add the **delegated permissions** above.
+4. Grant **admin consent** in the target tenant.
+5. Copy the **Application (client) ID** into `server/.env` and `web/.env`.
 
-> ⚠️ Permission names can differ by tenant and licensing. If you cannot find the exact permission above, open the API picker and search by keyword (e.g., “Exchange Online”, “Compliance”, “Purview”, “DLP”). Ensure the permissions you add are **Delegated** for the SPA flow.
+> ⚠️ The signed-in user must also be assigned the appropriate **Purview/Compliance role group** permissions in their tenant (for example DLP or Compliance admin roles) to run the compliance cmdlets.
 
-> ⚠️ The backend expects access tokens issued for the client ID configured in `server/.env` when `AUTH_MODE=msal`.
+### Automated setup (PowerShell + Microsoft Graph)
+The script below creates a **multi-tenant** app registration, adds the delegated permissions, grants admin consent (optional), and updates `server/.env` + `web/.env` with the client ID, auth mode, redirect URI, and scopes.
 
-## Authentication Modes
-The app supports two modes:
+```powershell
+pwsh ./scripts/create-entra-app.ps1 `
+  -AppName "Purview Extraction & Classification" `
+  -RedirectUris @("http://localhost:5173","https://yourdomain.example") `
+  -ExchangeScopeValue "full_access_as_user" `
+  -ComplianceScopeValue "Compliance.Read" `
+  -GrantAdminConsent `
+  -UpdateEnvFiles
+```
 
-1. **MSAL (default)**: uses the SPA + API token flow and requires your own Entra ID app registration.
-2. **Interactive (device code/user)**: skips MSAL and prompts for user auth on the server host (device code/web login) when PowerShell connects. This mode is intended for local or trusted environments and **does not** require an app registration, but it does require someone to complete interactive sign-in on the server.
+Prerequisites:
+- Install Microsoft Graph PowerShell: `Install-Module Microsoft.Graph -Scope CurrentUser` (or `Install-PSResource Microsoft.Graph` if you use PSResourceGet)
+- You must sign in with an account that can create app registrations.
+- To auto-grant admin consent, your account must have permission to grant tenant-wide consent (the script requests `DelegatedPermissionGrant.ReadWrite.All`).
+
+Manual fallback steps (if auto-consent fails):
+1. Open the v2.0 admin consent URL printed by the script in a browser as a tenant admin (it contains only resource `/.default` scopes).
+2. Confirm consent.
+
+If the script reports that it cannot find the Exchange Online delegated scope:
+- Re-run with `-ExchangeScopeValue` set to one of the values printed under “Available Exchange Online delegated scopes.”
+
+## Authentication
+The app runs **MSAL-only** with browser-based sign-in (authorization code + PKCE). This is required for public, multi-tenant deployments so all authentication happens in the user’s browser session.
 
 ## Environment Configuration
-Create `.env` files using the examples below (or copy from `server/.env.example` and `web/.env.example`):
+Create `.env` files using the examples below (or copy from `server/.env.example.msal` and `web/.env.example.msal`):
 
 ### Backend (`server/.env`)
 ```bash
@@ -62,10 +82,13 @@ PWSH_SCRIPTS_DIR=/app/scripts
 ### Frontend (`web/.env`)
 ```bash
 VITE_M365_CLIENT_ID=your-client-id
-VITE_AUTH_MODE=msal
 VITE_M365_AUTHORITY_HOST=https://login.microsoftonline.com
+VITE_M365_AUTHORITY_TENANT=organizations
 VITE_M365_REDIRECT_URI=http://localhost:5173
-VITE_M365_SCOPES=openid,profile,email,https://outlook.office365.com/.default,https://compliance.microsoft.com/.default
+VITE_LOGIN_SCOPES=openid,profile,email
+VITE_EXO_SCOPE=https://outlook.office365.com/.default
+VITE_COMPLIANCE_SCOPE=https://compliance.microsoft.com/.default
+VITE_M365_SCOPES=https://outlook.office365.com/.default,https://compliance.microsoft.com/.default
 VITE_API_BASE_URL=http://localhost:4000
 ```
 

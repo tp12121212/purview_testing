@@ -23,24 +23,38 @@ const getKey = (header, callback) => {
 
 const issuerForTenant = (tenantId) => `${config.authorityHost}/${tenantId}/v2.0`;
 
-export const authenticate = (req, res, next) => {
-  if (config.authMode === 'interactive') {
-    const userPrincipalName = req.headers['x-user-principal-name'] ?? req.body?.userPrincipalName;
-    if (!userPrincipalName) {
-      res.status(401).json({ error: 'Missing user principal name for interactive auth mode.' });
-      return;
-    }
-
-    req.auth = {
-      tenantId: null,
-      userPrincipalName,
-      token: null
-    };
-    logger.info('auth_interactive', { user: userPrincipalName });
-    next();
-    return;
+const normalizeAudience = (value) => {
+  if (!value || typeof value !== 'string') {
+    return null;
   }
+  let audience = value.trim();
+  if (!audience.includes('://')) {
+    return null;
+  }
+  if (audience.endsWith('/.default')) {
+    audience = audience.slice(0, -'/.default'.length);
+  }
+  audience = audience.replace(/\/+$/, '');
+  return audience || null;
+};
 
+const resolveAllowedAudiences = () => {
+  const audiences = new Set();
+  if (config.clientId) {
+    audiences.add(config.clientId);
+  }
+  for (const scope of config.apiScopes) {
+    const normalized = normalizeAudience(scope);
+    if (normalized) {
+      audiences.add(normalized);
+    }
+  }
+  return Array.from(audiences);
+};
+
+const allowedAudiences = resolveAllowedAudiences();
+
+export const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Missing bearer token.' });
@@ -49,7 +63,12 @@ export const authenticate = (req, res, next) => {
 
   const token = authHeader.substring('Bearer '.length);
 
-  jwt.verify(token, getKey, { algorithms: ['RS256'], audience: config.clientId }, (err, decoded) => {
+  const verifyOptions = {
+    algorithms: ['RS256'],
+    ...(allowedAudiences.length > 0 ? { audience: allowedAudiences } : {})
+  };
+
+  jwt.verify(token, getKey, verifyOptions, (err, decoded) => {
     if (err) {
       logger.warn('auth_failed', { error: err.message });
       res.status(401).json({ error: 'Invalid token.' });
@@ -70,6 +89,12 @@ export const authenticate = (req, res, next) => {
     const expectedIssuer = issuerForTenant(tenantId);
     if (decoded.iss !== expectedIssuer) {
       res.status(401).json({ error: 'Invalid issuer.' });
+      return;
+    }
+
+    const authorizedParty = decoded.azp ?? decoded.appid;
+    if (authorizedParty && config.clientId && authorizedParty !== config.clientId) {
+      res.status(401).json({ error: 'Token issued for unexpected client.' });
       return;
     }
 

@@ -61,8 +61,22 @@ export const runTextExtraction = async ({ filePath, accessToken, userPrincipalNa
   return parseJson(stdout);
 };
 
-export const runDataClassification = async ({ filePath, accessToken, userPrincipalName, sensitiveTypes, useAll }) => {
+export const runDataClassification = async ({
+  filePath,
+  exchangeAccessToken,
+  complianceAccessToken,
+  accessToken,
+  userPrincipalName,
+  sensitiveTypes,
+  useAll
+}) => {
   const args = ['-FilePath', filePath];
+  if (exchangeAccessToken) {
+    args.push('-ExchangeAccessToken', exchangeAccessToken);
+  }
+  if (complianceAccessToken) {
+    args.push('-ComplianceAccessToken', complianceAccessToken);
+  }
   if (accessToken) {
     args.push('-AccessToken', accessToken);
   }

@@ -11,7 +11,10 @@ const required = (name, fallback = undefined) => {
 };
 
 const authMode = (process.env.AUTH_MODE ?? 'msal').toLowerCase();
-const shouldRequireClientId = authMode === 'msal';
+if (authMode !== 'msal') {
+  throw new Error('Only MSAL authentication is supported in this deployment.');
+}
+const shouldRequireClientId = true;
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),

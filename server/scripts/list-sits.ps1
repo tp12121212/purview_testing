@@ -8,14 +8,31 @@ param(
 )
 
 try {
+    $ippsCommand = Get-Command Connect-IPPSSession -ErrorAction Stop
+    $deviceParam = $null
+    foreach ($candidate in @("UseDeviceAuthentication", "Device")) {
+        if ($ippsCommand.Parameters.ContainsKey($candidate)) {
+            $deviceParam = $candidate
+            break
+        }
+    }
+
     if ($AccessToken) {
         Connect-IPPSSession -AccessToken $AccessToken -ShowBanner:$false -ErrorAction Stop
     }
     elseif ($UserPrincipalName) {
         Connect-IPPSSession -UserPrincipalName $UserPrincipalName -ShowBanner:$false -ErrorAction Stop
     }
+    elseif ($deviceParam) {
+        $deviceParams = @{
+            ShowBanner = $false
+            ErrorAction = "Stop"
+        }
+        $deviceParams[$deviceParam] = $true
+        Connect-IPPSSession @deviceParams
+    }
     else {
-        throw "Either AccessToken or UserPrincipalName must be provided."
+        throw "Either AccessToken or UserPrincipalName must be provided (device authentication is not supported by this module version)."
     }
 
     $sitResults = @(Get-DlpSensitiveInformationType -ErrorAction Stop)

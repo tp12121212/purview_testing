@@ -105,11 +105,14 @@ app.post('/api/classification', authenticate, upload.single('file'), validateCon
       ? selectedSits
       : [];
   const normalizedUseAllSits = typeof useAllSits === 'string' ? useAllSits === 'true' : Boolean(useAllSits);
+  const exchangeToken = req.headers['x-exchange-token'] ?? req.auth?.token;
+  const complianceToken = req.headers['x-compliance-token'] ?? req.auth?.token;
 
   try {
     const result = await runDataClassification({
       filePath: req.file.path,
-      accessToken: req.auth?.token,
+      exchangeAccessToken: exchangeToken,
+      complianceAccessToken: complianceToken,
       userPrincipalName: req.auth?.userPrincipalName,
       sensitiveTypes: normalizedSelectedSits,
       useAll: normalizedUseAllSits
