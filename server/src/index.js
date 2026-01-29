@@ -8,7 +8,7 @@ import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from './config.js';
 import { logger } from './logger.js';
-import { authenticate } from './auth.js';
+import { authenticate, isAudienceAllowed, tokenAudiences, verifySupplementalToken } from './auth.js';
 import { listSensitiveInformationTypes, runDataClassification, runTextExtraction } from './powershell.js';
 
 const app = express();
@@ -66,7 +66,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.get('/api/sensitive-information-types', authenticate, async (req, res) => {
+app.get('/api/sensitive-information-types', authenticate(tokenAudiences.compliance), async (req, res) => {
   logger.info('sits_list_requested', { user: req.auth?.userPrincipalName, tenant: req.auth?.tenantId });
   try {
     const data = await listSensitiveInformationTypes({
@@ -80,7 +80,7 @@ app.get('/api/sensitive-information-types', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/extraction', authenticate, upload.single('file'), validateContentType, withCleanup(async (req, res) => {
+app.post('/api/extraction', authenticate(tokenAudiences.exchange), upload.single('file'), validateContentType, withCleanup(async (req, res) => {
   logger.info('text_extraction_requested', { user: req.auth?.userPrincipalName, tenant: req.auth?.tenantId });
   try {
     const result = await runTextExtraction({
@@ -95,7 +95,7 @@ app.post('/api/extraction', authenticate, upload.single('file'), validateContent
   }
 }));
 
-app.post('/api/classification', authenticate, upload.single('file'), validateContentType, withCleanup(async (req, res) => {
+app.post('/api/classification', authenticate(tokenAudiences.classification), upload.single('file'), validateContentType, withCleanup(async (req, res) => {
   logger.info('data_classification_requested', { user: req.auth?.userPrincipalName, tenant: req.auth?.tenantId });
 
   const { selectedSits, useAllSits } = req.body ?? {};
@@ -105,8 +105,37 @@ app.post('/api/classification', authenticate, upload.single('file'), validateCon
       ? selectedSits
       : [];
   const normalizedUseAllSits = typeof useAllSits === 'string' ? useAllSits === 'true' : Boolean(useAllSits);
-  const exchangeToken = req.headers['x-exchange-token'] ?? req.auth?.token;
-  const complianceToken = req.headers['x-compliance-token'] ?? req.auth?.token;
+  const primaryAudience = req.auth?.audience;
+  const normalizeHeaderToken = (value) => Array.isArray(value) ? value[0] : value;
+  const primaryIsExchange = isAudienceAllowed(primaryAudience, tokenAudiences.exchange);
+  const primaryIsCompliance = isAudienceAllowed(primaryAudience, tokenAudiences.compliance);
+
+  const exchangeToken = primaryIsExchange ? req.auth?.token : normalizeHeaderToken(req.headers['x-exchange-token']);
+  const complianceToken = primaryIsCompliance ? req.auth?.token : normalizeHeaderToken(req.headers['x-compliance-token']);
+
+  if (!exchangeToken || !complianceToken) {
+    res.status(401).json({ error: 'Both Exchange and Compliance tokens are required.' });
+    return;
+  }
+
+  try {
+    if (!primaryIsExchange) {
+      await verifySupplementalToken(exchangeToken, {
+        expectedAudiences: tokenAudiences.exchange,
+        expectedTenantId: req.auth?.tenantId
+      });
+    }
+    if (!primaryIsCompliance) {
+      await verifySupplementalToken(complianceToken, {
+        expectedAudiences: tokenAudiences.compliance,
+        expectedTenantId: req.auth?.tenantId
+      });
+    }
+  } catch (error) {
+    logger.warn('classification_token_invalid', { error: error.message });
+    res.status(401).json({ error: 'Invalid Exchange or Compliance token.' });
+    return;
+  }
 
   try {
     const result = await runDataClassification({

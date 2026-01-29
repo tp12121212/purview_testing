@@ -1,0 +1,15 @@
+{
+  "clientId": "",
+  "authorityHost": "https://login.microsoftonline.com",
+  "authorityTenant": "organizations",
+  "redirectUri": "",
+  "graphBaseUrl": "https://graph.microsoft.com",
+  "graphApiVersion": "v1.0",
+  "infoProtectionApiVersion": "beta",
+  "loginScopes": ["openid", "profile", "email"],
+  "profileScope": "User.Read",
+  "mailReadScope": "Mail.Read",
+  "filesReadScope": "Files.Read",
+  "sitesReadScope": "Sites.Read.All",
+  "labelsReadScope": "InformationProtectionPolicy.Read"
+}

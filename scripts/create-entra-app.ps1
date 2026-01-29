@@ -2,19 +2,21 @@
 param(
     [string]$AppName = "Purview Extraction & Classification",
     [string[]]$RedirectUris = @("http://localhost:5173"),
-    [string]$ExchangeScopeValue = "full_access_as_user",
+    [string]$ExchangeScopeValue = "EWS.AccessAsUser.All",
     [string]$ComplianceScopeValue = "Compliance.Read",
     [switch]$IncludeComplianceReadWrite,
     [switch]$GrantAdminConsent,
     [switch]$UpdateEnvFiles,
+    [switch]$UpdateRuntimeConfig,
     [string]$ServerEnvPath = "../server/.env",
-    [string]$WebEnvPath = "../web/.env"
+    [string]$WebEnvPath = "../web/.env",
+    [string]$RuntimeConfigPath = "../web/public/runtime-config.json"
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
-    Write-Error "Microsoft.Graph module not found. Install it with: Install-Module Microsoft.Graph -Scope CurrentUser"
+    Write-Error "Microsoft.Graph module not found. Install it with: Install-PSResource -Name Microsoft.Graph -Scope CurrentUser"
     exit 1
 }
 
@@ -56,6 +58,44 @@ function Set-EnvValue {
         $content += "$Key=$Value`n"
     }
     Set-Content -LiteralPath $Path -Value $content
+}
+
+function Write-RuntimeConfig {
+    param(
+        [string]$Path,
+        [string]$ClientId,
+        [string]$RedirectUri,
+        [string]$ExchangeScopeValue,
+        [string]$ComplianceScopeValue
+    )
+
+    $exchangeScope = $ExchangeScopeValue
+    if ($ExchangeScopeValue -notmatch '://') {
+        $exchangeScope = "https://outlook.office365.com/$ExchangeScopeValue"
+    }
+
+    $complianceScope = $ComplianceScopeValue
+    if ($ComplianceScopeValue -notmatch '://') {
+        $complianceScope = "https://compliance.microsoft.com/$ComplianceScopeValue"
+    }
+
+    $config = [ordered]@{
+        clientId = $ClientId
+        authorityHost = "https://login.microsoftonline.com"
+        authorityTenant = "organizations"
+        redirectUri = $RedirectUri
+        loginScopes = @("openid", "profile", "email")
+        exchangeScope = $exchangeScope
+        complianceScope = $complianceScope
+        apiBaseUrl = "http://localhost:4000"
+    }
+
+    $dir = Split-Path -Parent $Path
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+
+    $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $Path
 }
 
 $graphAppId = "00000003-0000-0000-c000-000000000000"
@@ -188,7 +228,7 @@ if ($GrantAdminConsent) {
         $grants = @(
             @{
                 Resource = $exoSp
-                Scopes = @("full_access_as_user")
+                Scopes = @($ExchangeScopeValue)
             },
             @{
                 Resource = $complianceSp
@@ -236,9 +276,13 @@ if ($UpdateEnvFiles) {
     Set-EnvValue -Path $WebEnvPath -Key "VITE_M365_AUTHORITY_TENANT" -Value "organizations"
     Set-EnvValue -Path $WebEnvPath -Key "VITE_M365_REDIRECT_URI" -Value $redirectUri
     Set-EnvValue -Path $WebEnvPath -Key "VITE_LOGIN_SCOPES" -Value "openid,profile,email"
-    Set-EnvValue -Path $WebEnvPath -Key "VITE_EXO_SCOPE" -Value "https://outlook.office365.com/.default"
-    Set-EnvValue -Path $WebEnvPath -Key "VITE_COMPLIANCE_SCOPE" -Value "https://compliance.microsoft.com/.default"
+    Set-EnvValue -Path $WebEnvPath -Key "VITE_EXO_SCOPE" -Value "https://outlook.office365.com/$ExchangeScopeValue"
+    Set-EnvValue -Path $WebEnvPath -Key "VITE_COMPLIANCE_SCOPE" -Value "https://compliance.microsoft.com/$ComplianceScopeValue"
     Set-EnvValue -Path $WebEnvPath -Key "VITE_M365_SCOPES" -Value "https://outlook.office365.com/.default,https://compliance.microsoft.com/.default"
+}
+
+if ($UpdateRuntimeConfig) {
+    Write-RuntimeConfig -Path $RuntimeConfigPath -ClientId $app.AppId -RedirectUri $redirectUri -ExchangeScopeValue $ExchangeScopeValue -ComplianceScopeValue $ComplianceScopeValue
 }
 
 Write-Host ""
@@ -247,5 +291,8 @@ Write-Host "App (client) ID: $($app.AppId)"
 Write-Host "Tenant ID: $tenantId"
 Write-Host "Admin consent URL (run in a browser as a tenant admin if consent was not granted automatically):"
 Write-Host $consentUrl
+if ($UpdateRuntimeConfig) {
+    Write-Host "Runtime config updated: $RuntimeConfigPath"
+}
 
 Disconnect-MgGraph | Out-Null

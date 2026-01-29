@@ -19,6 +19,13 @@ body {
   flex-direction: column;
 }
 
+.app-loading {
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: #1f2937;
+}
+
 .hero {
   background: linear-gradient(120deg, #1d4ed8, #6366f1);
   color: #fff;
@@ -85,19 +92,107 @@ main {
   margin-bottom: 1rem;
 }
 
+.config-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 1rem;
+}
+
 .field input[type="text"],
-.field input[type="file"] {
+.field input[type="file"],
+.field input[type="number"],
+.field textarea,
+.field select {
   padding: 0.6rem 0.75rem;
   border-radius: 10px;
   border: 1px solid #d1d5db;
   font-size: 0.95rem;
+  width: 100%;
 }
 
-.sits-actions {
-  display: flex;
+.field textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.field select {
+  background: #fff;
+}
+
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.source-option {
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  padding: 1rem;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.source-option.active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.source-option span {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.sit-actions {
+  display: flex;
+  gap: 0.75rem;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.sit-list {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.sit-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.sit-item input {
+  margin-top: 0.2rem;
+}
+
+.sit-item strong {
+  display: block;
+}
+
+.sit-item span {
+  display: block;
+  font-size: 0.7rem;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.sit-item em {
+  display: block;
+  font-size: 0.8rem;
+  color: #475569;
 }
 
 .toggle {
@@ -106,24 +201,81 @@ main {
   align-items: center;
 }
 
-.sits-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.sits-list span {
-  background: #eef2ff;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
-}
-
 .actions {
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.permission-list {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 1rem 0;
+}
+
+.meta-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.text-preview {
+  max-height: 280px;
+  overflow-y: auto;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.detector-list {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.detector-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1rem;
+  background: #f8fafc;
+}
+
+.file-button {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #e2e8f0;
+  color: #0f172a;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.file-button input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.scope-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.scope-list span {
+  background: #f1f5f9;
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  color: #334155;
 }
 
 button {
@@ -146,6 +298,16 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.source-option {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.source-option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .status {
   color: #1d4ed8;
   margin-top: 0.5rem;
@@ -154,6 +316,22 @@ button:disabled {
 .error {
   color: #b91c1c;
   margin-top: 0.5rem;
+}
+
+.warning {
+  color: #b45309;
+  margin-top: 0.5rem;
+}
+
+.helper {
+  color: #475569;
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+}
+
+.hint {
+  color: #64748b;
+  font-size: 0.75rem;
 }
 
 .table-wrapper {

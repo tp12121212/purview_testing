@@ -1,62 +1,54 @@
-export const authorityHost = (import.meta.env.VITE_M365_AUTHORITY_HOST ?? 'https://login.microsoftonline.com')
-  .replace(/\/+$/, '');
+const trimTrailingSlash = (value) => (value ?? '').replace(/\/+$/, '');
 
-export const authorityTenant = (import.meta.env.VITE_M365_AUTHORITY_TENANT ?? 'organizations')
-  .replace(/^\/+|\/+$/g, '');
+const buildAuthority = (config) => {
+  const host = trimTrailingSlash(config.authorityHost);
+  const tenant = (config.authorityTenant ?? 'organizations').replace(/^\/+|\/+$/g, '');
+  return `${host}/${tenant || 'organizations'}`;
+};
 
-export const msalConfig = {
+const normalizeLoginScopes = (scopes) => {
+  const allowed = new Set(['openid', 'profile', 'email', 'offline_access']);
+  return (Array.isArray(scopes) ? scopes : [])
+    .map((scope) => scope.trim())
+    .filter((scope) => allowed.has(scope));
+};
+
+export const buildMsalConfig = (config) => ({
   auth: {
-    clientId: import.meta.env.VITE_M365_CLIENT_ID,
-    authority: `${authorityHost}/${authorityTenant || 'organizations'}`,
-    redirectUri: import.meta.env.VITE_M365_REDIRECT_URI ?? window.location.origin
+    clientId: config.clientId,
+    authority: buildAuthority(config),
+    redirectUri: config.redirectUri ?? window.location.origin
   },
   cache: {
     cacheLocation: 'sessionStorage',
     storeAuthStateInCookie: false
   }
-};
+});
 
-export const clientId = msalConfig.auth.clientId;
-
-const parseScopes = (value) => (value ?? '')
-  .split(',')
-  .map((scope) => scope.trim())
-  .filter(Boolean);
-
-const rawScopes = parseScopes(import.meta.env.VITE_M365_SCOPES);
-
-export const loginRequest = {
-  scopes: parseScopes(import.meta.env.VITE_LOGIN_SCOPES ?? 'openid,profile,email')
-};
-
-export const exoScope = import.meta.env.VITE_EXO_SCOPE
-  ?? rawScopes.find((scope) => scope.includes('outlook.office365.com'))
-  ?? 'https://outlook.office365.com/.default';
-
-export const complianceScope = import.meta.env.VITE_COMPLIANCE_SCOPE
-  ?? rawScopes.find((scope) => scope.includes('compliance.microsoft.com'))
-  ?? 'https://compliance.microsoft.com/.default';
-
-const buildAdminConsentScopes = () => {
-  const scopes = new Set();
-  const addIfResourceScope = (scope) => {
-    if (!scope) {
-      return;
-    }
-    if (scope.includes('://')) {
-      scopes.add(scope);
-    }
+export const buildLoginRequest = (config) => {
+  const scopes = normalizeLoginScopes(config.loginScopes);
+  return {
+    scopes: scopes.length ? scopes : ['openid', 'profile', 'email']
   };
-
-  if (rawScopes.length) {
-    rawScopes.forEach(addIfResourceScope);
-    return Array.from(scopes);
-  }
-
-  addIfResourceScope(exoScope);
-  addIfResourceScope(complianceScope);
-
-  return Array.from(scopes);
 };
 
-export const adminConsentScopes = buildAdminConsentScopes();
+export const buildGraphAdminConsentUrl = (config, tenantId) => {
+  if (!config.clientId) {
+    return null;
+  }
+  const tenantSegment = tenantId || config.authorityTenant || 'organizations';
+  const redirectUri = encodeURIComponent(config.redirectUri ?? window.location.origin);
+  const scopeParam = encodeURIComponent('https://graph.microsoft.com/.default');
+  return `${trimTrailingSlash(config.authorityHost)}/${tenantSegment}/v2.0/adminconsent?client_id=${config.clientId}&scope=${scopeParam}&redirect_uri=${redirectUri}`;
+};
+
+export const formatScopeList = (scopes) => {
+  if (!Array.isArray(scopes)) {
+    return scopes ? String(scopes) : '';
+  }
+  return scopes.filter(Boolean).join(', ');
+};
+
+export const buildScopeList = (values) => Array.from(new Set(values.filter(Boolean)));
+
+export const summarizeScopeSet = (scopeSet) => scopeSet.length ? scopeSet.join(', ') : 'None';

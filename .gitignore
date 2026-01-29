@@ -10,12 +10,20 @@
 *.userosscache
 *.sln.docstates
 *.env
-
+*rulepack*
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
 # Mono auto generated files
 mono_crash.*
+rulepack1.xml
+rulepack.xml
+rulepack3.xml
+rulepack5.xml
+rulepack5.xml
+rulepack*.xml
+*epack*.xml
+
 
 # Build results
 [Dd]ebug/
@@ -422,3 +430,4 @@ web/dist/
 
 # OS-specific
 .DS_Store
+
