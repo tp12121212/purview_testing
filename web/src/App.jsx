@@ -951,7 +951,7 @@ export default function App({ runtimeConfig, onSaveConfig, onResetConfig, onCopy
             <SourceOption
               id="file"
               label="Local file"
-              description="PDF, DOCX, TXT, EML, MSG, images, archives (client-side extraction)"
+              description="PDF, DOCX, TXT, CSV, MD, JSON, EML (client-side extraction)"
               selected={sourceType === 'file'}
               onSelect={setSourceType}
             />
@@ -990,7 +990,7 @@ export default function App({ runtimeConfig, onSaveConfig, onResetConfig, onCopy
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
               <p className="helper">
-                Supports PDF, DOCX, TXT, EML today; attachments, images, and archives will appear after the next extractor update.
+                Supports PDF, DOCX, TXT, CSV, MD, JSON, EML today; attachments, images, and archives will appear after the next extractor update.
               </p>
             </div>
           )}
