@@ -8,13 +8,13 @@ The app runs entirely in the browser using **MSAL (OAuth 2.0 Authorization Code 
 
 ## What This App Does
 - **Text extraction** from:
-  - Local files (PDF, DOCX, TXT, CSV, MD, JSON, EML) using client-side parsing.
+  - Local files (PDF with OCR fallback, DOCX, TXT, EML, MSG, image OCR, ZIP/7z/RAR archives) using client-side parsing.
   - Outlook messages via Microsoft Graph (Mail.Read).
   - OneDrive recent files via Microsoft Graph (Files.Read).
 - **Data classification** using client-side regex detectors (read-only mode).
 - **Optional label evaluation** using Microsoft Graph Information Protection (beta) if you provide `sensitiveTypeId` values and have `InformationProtectionPolicy.Read`.
 
-> Support for additional file types (MSG, image scans, PDF scans, ZIP/7z/RAR containers) and `.msg` attachments is planned once the required parsing/OCR packages can be installed in this environment.
+> Image OCR now runs through Tesseract.js and archive extraction uses libarchive.js; Graph attachments and encrypted containers remain on the roadmap.
 
 ## Sensitive Information Types (SIT) Rule Packs
 To evaluate extracted text against built-in or custom SITs, export a rule pack XML from your tenant and import it in the app.

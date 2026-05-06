@@ -951,7 +951,7 @@ export default function App({ runtimeConfig, onSaveConfig, onResetConfig, onCopy
             <SourceOption
               id="file"
               label="Local file"
-              description="PDF, DOCX, TXT, CSV, MD, JSON, EML (client-side extraction)"
+              description="PDF (text + OCR fallback), DOCX, TXT, EML, MSG, image OCR, archives (zip/7z/rar) (client-side extraction)"
               selected={sourceType === 'file'}
               onSelect={setSourceType}
             />
@@ -986,11 +986,11 @@ export default function App({ runtimeConfig, onSaveConfig, onResetConfig, onCopy
               <input
                 id="file"
                 type="file"
-                accept=".pdf,.docx,.txt,.csv,.md,.json,.eml"
+                accept=".pdf,.docx,.txt,.eml,.msg,.zip,.7z,.rar,.tar,.gz,.tgz,.xz,image/jpeg,image/jpg,image/png,image/tiff,image/bmp,image/gif,image/webp,image/*"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
               <p className="helper">
-                Supports PDF, DOCX, TXT, CSV, MD, JSON, EML today; attachments, images, and archives will appear after the next extractor update.
+                Supports PDF (text + OCR fallback), DOCX, TXT, EML, MSG, OCR on image formats, and ZIP/7z/RAR archives today.
               </p>
             </div>
           )}
